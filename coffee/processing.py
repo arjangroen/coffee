@@ -26,6 +26,7 @@ class coffee(object):
         self.doc = dominate.document(title=docTitle)
         self.name = docTitle
         self.collection = {}
+        
         if run:
             self.run()
         
@@ -40,7 +41,9 @@ class coffee(object):
         
     def milk(self,col,ax):   
         fig = ax.get_figure()
-        fig.savefig(self.name + "/" + col + ".jpg")
+        figname = col + ".jpg"
+        fig.savefig(figname)
+        return figname
         
     def make_VC_table(self,col,maxDims=50):
         vc = self.collection[col]["valCounts"]
@@ -91,15 +94,22 @@ class coffee(object):
         # Add ValCounts
         table = self.make_VC_table(col)
         self.doc+= table
-        
-        
-        
+
     def make(self):
         for key,value in self.collection.items():
             self.serve(key)
 
-        with open(self.name+'.html', 'w',encoding='utf-8') as f:
+        with open(self.name +"/" + self.name+'.html', 'w',encoding='utf-8') as f:
             f.write(self.doc.render())
+            
+    def coffee_bar(self,col):
+        colSummary = self.collection[col]
+        plt.figure(figsize=(14,5))
+        if colSummary["n_dims"] <= 50:
+            ax = colSummary["valCounts"].plot(kind="bar")
+        else:
+            ax = colSummary["valCounts"][:25].plot(kind="bar")
+        return ax    
         
     def grind_string(self,col):
         """
@@ -111,14 +121,15 @@ class coffee(object):
         colSummary["valCounts"] = series.value_counts(dropna=False)
         colSummary["n_dims"] = colSummary["valCounts"].shape[0]
         colSummary["n_missing"] = pd.isnull(series).sum()
-        if colSummary["n_dims"] <= 50:
-            ax = colSummary["valCounts"].plot(kind="bar")
-        else:
-            ax = colSummary["valCounts"][:10].plot(kind="bar")
-        self.milk(col,ax)
+        self.collection[col] = colSummary
+        #if colSummary["n_dims"] <= 50:
+        #    ax = colSummary["valCounts"].plot(kind="bar")
+        #else:
+        #    ax = colSummary["valCounts"][:10].plot(kind="bar")
+        ax = self.coffee_bar(col)
+        figname = self.milk(col,ax)
         plt.cla()
-        colSummary["plotfile"] = self.name + "/" + col + ".jpg"
-        
+        colSummary["plotfile"] = figname
         #STORE RESULT
         self.collection[col] = colSummary
 
@@ -135,7 +146,7 @@ class coffee(object):
         ax = series.hist(bins=20)
         self.milk(col,ax)
         plt.cla()        
-        colSummary["plotfile"] = self.name + "/" + col + ".jpg"
+        colSummary["plotfile"] = col + ".jpg"
         
         #STORE RESULT
         self.collection[col] = colSummary        
