@@ -1,0 +1,21 @@
+p {
+    text-indent: 150px;
+}
+
+h1 {
+    margin-top: 50px;
+    text-indent: 50px;
+    clear: both
+}
+
+h2 {
+    text-indent: 100px;
+    clear: both
+}
+
+table {
+    margin-left: 150px;
+    margin-bottom: 50px;
+    float: left
+}
+

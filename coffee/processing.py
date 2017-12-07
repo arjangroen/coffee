@@ -12,6 +12,10 @@ import matplotlib.pyplot as plt
 import dominate
 from dominate.tags import *
 import os
+from shutil import copyfile
+import checks
+#df = pd.read_csv("testdata/football-events/events.csv",encoding="cp1252")
+
 
 class coffee(object):
     
@@ -24,6 +28,8 @@ class coffee(object):
         self.len = self.df.shape[0]
         self.maxdims = maxdims
         self.doc = dominate.document(title=docTitle)
+        with self.doc.head:
+            link(rel='stylesheet', href='style.css')
         self.name = docTitle
         self.collection = {}
         
@@ -32,21 +38,25 @@ class coffee(object):
         
     def run(self):
         self.grind_columns()
-        self.make()
+        self.make_doc()
         
-    def place_cup(self):
+    def make_dir(self):
         directory = self.name
+        css = 'style.css'
         if not os.path.exists(directory):
             os.makedirs(directory)
+        copyfile(css, directory + "/" + css)
         
-    def milk(self,col,ax):   
+    def save_fig(self,col,ax):   
         fig = ax.get_figure()
         figname = col + ".jpg"
-        fig.savefig(figname)
+        fig.savefig(self.name+"/"+figname)
         return figname
         
-    def make_VC_table(self,col,maxDims=50):
+    def full_VC_table(self,col):
         vc = self.collection[col]["valCounts"]
+        size = vc.shape[0]
+
         print(vc.head())
         tbl = table()
         row1 = tr()
@@ -56,8 +66,8 @@ class coffee(object):
         row1 += th2
         tbl+=row1
         
-        dims = min(maxDims,vc.shape[0])
-        for i in range(dims):
+        self.doc += h2("Count of all distinct values")        
+        for i in range(size):
             rowi = tr()
             tdi1 = td(vc.index[i])
             tdi2 = td(vc.loc[vc.index[i]])
@@ -66,14 +76,57 @@ class coffee(object):
             tbl += rowi
             
         return tbl
+    
+    def topN_VC_table(self,col,ascending=False,topSize=10):
+        vc = self.collection[col]["valCounts"]
+        vc = vc.sort_values(ascending=ascending)
+
+        tbl = table()
+        row1 = tr()
+        th1 = th("Value")
+        th2 = th("Frequency")
+        row1 += th1
+        row1 += th2
+        tbl+=row1
+              
+        for i in range(topSize):
+            rowi = tr()
+            tdi1 = td(vc.index[i])
+            tdi2 = td(vc.loc[vc.index[i]])
+            rowi += tdi1
+            rowi += tdi2
+            tbl += rowi
+            
+        return tbl       
+    
+    def special_char_table(self,col):
+        specChars = self.collection[col]["specialChars"]
+        tbl = table()
+        row1 = tr()
+        th1 = th("Character")
+        th2 = th("indices")
+        row1 += th1
+        row1 += th2
+        tbl+=row1
+        for key,value in specChars.items():
+            rowi = tr()
+            tdi1 = td(key)
+            tdi2 = td(value)
+            rowi += tdi1
+            rowi += tdi2
+            tbl += rowi      
+            
+        return tbl
+            
         
-    def serve(self,col):
+    def make_doc_column(self,col,maxDims=30,topSize=10):
         # Get colSummary
         colSummary = self.collection[col]
         
         # Add Column Name
-        self.doc+= h1(col)
-        
+        self.doc+= h1("Column: " + col)
+        self.doc+= h2("Datatype")
+        self.doc+= p("The dtype is: " + colSummary["dtype"])
         # Add plot
         self.doc+= h2("distribution of values")
         self.doc+= img(src=colSummary["plotfile"])
@@ -92,19 +145,35 @@ class coffee(object):
         self.doc+= p(text)
         
         # Add ValCounts
-        table = self.make_VC_table(col)
-        self.doc+= table
+        if colSummary["n_dims"] <= maxDims:
+            table = self.full_VC_table(col)
+            self.doc+= table
+        else:
+            header2 = "Top " + str(topSize) + " (left) and bottom " + str(topSize) + " (right) value frequencies."
+            
+            table1 = self.topN_VC_table(col,ascending=False,topSize=topSize)
+            table2 = self.topN_VC_table(col,ascending=True,topSize=topSize)
+            self.doc+=h2(header2)
+            self.doc+= table1
+            self.doc+= table2
+            
+        # Add special Characters
+        if colSummary["dtype"] == "object" and len(colSummary["specialChars"].values())>0:
+            self.doc+=h2("Special characters found in the following indices:")
+            table = self.special_char_table(col)
+            self.doc+=table
+            
 
-    def make(self):
+    def make_doc(self):
         for key,value in self.collection.items():
-            self.serve(key)
+            self.make_doc_column(key)
 
         with open(self.name +"/" + self.name+'.html', 'w',encoding='utf-8') as f:
             f.write(self.doc.render())
             
-    def coffee_bar(self,col):
+    def make_barChart(self,col):
         colSummary = self.collection[col]
-        plt.figure(figsize=(14,5))
+        #plt.figure(figsize=(14,5))
         if colSummary["n_dims"] <= 50:
             ax = colSummary["valCounts"].plot(kind="bar")
         else:
@@ -116,19 +185,16 @@ class coffee(object):
         input: column name from self.df which contains a string/object dtype
         output: analysis dictionary.
         """
-        colSummary = {}
         series = self.df[col]
-        colSummary["valCounts"] = series.value_counts(dropna=False)
-        colSummary["n_dims"] = colSummary["valCounts"].shape[0]
+        colSummary  = self.collection[col]
+        colSummary["specialChars"] = checks.check_special_characters(series)
         colSummary["n_missing"] = pd.isnull(series).sum()
         self.collection[col] = colSummary
-        #if colSummary["n_dims"] <= 50:
-        #    ax = colSummary["valCounts"].plot(kind="bar")
-        #else:
-        #    ax = colSummary["valCounts"][:10].plot(kind="bar")
-        ax = self.coffee_bar(col)
-        figname = self.milk(col,ax)
+        plt.figure(figsize=(14,5))
+        ax = self.make_barChart(col)
+        figname = self.save_fig(col,ax)
         plt.cla()
+        plt.close()
         colSummary["plotfile"] = figname
         #STORE RESULT
         self.collection[col] = colSummary
@@ -138,33 +204,45 @@ class coffee(object):
         input: column name from self.df which contains a numeric dtype
         output: analysis dictionary.
         """        
+        series = self.df[col]
+        colSummary  = self.collection[col]
+        colSummary["n_missing"] = self.df[col].shape[0] - np.isfinite(series).sum()
+        plt.figure(figsize=(14,5))
+        ax = series.hist(bins=20)
+        self.save_fig(col,ax)
+        plt.cla()      
+        plt.close()
+        colSummary["plotfile"] = col + ".jpg"
+        #STORE RESULT
+        self.collection[col] = colSummary        
+        
+    def grind_column(self,col):
         colSummary = {}
         series = self.df[col]
         colSummary["valCounts"] = series.value_counts(dropna=False)
         colSummary["n_dims"] = colSummary["valCounts"].shape[0]
-        colSummary["n_missing"] = self.df[col].shape[0] - np.isfinite(series).sum()
-        ax = series.hist(bins=20)
-        self.milk(col,ax)
-        plt.cla()        
-        colSummary["plotfile"] = col + ".jpg"
+        colSummary["dtype"] =    str(self.df[col].dtype)
+        self.collection[col] = colSummary 
+        if is_string_dtype(self.df[col]):
+            self.grind_string(col)
+        elif is_numeric_dtype(self.df[col]):
+            self.grind_numeric(col)
+        else:
+            print("Unkown dtype for col: ",col)
+            print("Dtype = ",self.df[col].dtype)                    
         
-        #STORE RESULT
-        self.collection[col] = colSummary        
         
     def grind_columns(self):
         """
         input: pandas dataframe 
         output: html report for all columns
         """
-        self.place_cup()
+        self.make_dir()
         for col in self.df.columns:
-            if is_string_dtype(self.df[col]):
-                self.grind_string(col)
-            elif is_numeric_dtype(self.df[col]):
-                self.grind_numeric(col)
-            else:
-                print("Unkown dtype for col: ",col)
-                print("Dtype = ",self.df[col].dtype)
+            print("Processing ",col)
+            self.grind_column(col)
+            
+
                 
         
             
